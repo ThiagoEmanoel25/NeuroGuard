@@ -24,9 +24,9 @@ type ServerConfig struct {
 }
 
 type JWTConfig struct {
-	Secret          string
-	ExpiryHours     int
-	RefreshExpiry   time.Duration
+	Secret        string
+	ExpiryHours   int
+	RefreshExpiry time.Duration
 }
 
 type RedisConfig struct {
