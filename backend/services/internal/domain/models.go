@@ -1,23 +1,23 @@
 package domain
 
 import "time"
+
 // ─── Papéis e permissões ────────────────────────────────────────────────────
- 
+
 // Role define o papel de um usuário no sistema.
-type role string
+type Role string
 
 const (
-	Rolepatient role = "patient"
-	Rolerescuer role = "rescuer"
-	RoleDoctor  role = "doctor"
-	RoleAdmin   role = "admin"
+	RolePatient Role = "patient"
+	RoleRescuer Role = "rescuer"
+	RoleDoctor  Role = "doctor"
+	RoleAdmin   Role = "admin"
 )
 
 type User struct {
-	ID 	 string   `json:"id"`
-	Name string   `json:"name"`
-	Email string  `json:"email"`
-	Role  Role   `json:"role"`
-	CreatedAt time.time `json:"created_at"`
+	ID        string    `json:"id"`
+	Name      string    `json:"name"`
+	Email     string    `json:"email"`
+	Role      Role      `json:"role"`
+	CreatedAt time.Time `json:"created_at"`
 }
-

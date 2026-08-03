@@ -56,10 +56,16 @@ func Load() (*Config, error) {
 	if err != nil {
 		return nil, fmt.Errorf("JWT_EXPIRY_HOURS inválido: %w", err)
 	}
+	if jwtExpiry <= 0 {
+		return nil, fmt.Errorf("JWT_EXPIRY_HOURS deve ser maior que zero")
+	}
 
 	redisDB, err := strconv.Atoi(getEnvOrDefault("REDIS_DB", "0"))
 	if err != nil {
 		return nil, fmt.Errorf("REDIS_DB inválido: %w", err)
+	}
+	if redisDB < 0 {
+		return nil, fmt.Errorf("REDIS_DB não pode ser negativo")
 	}
 
 	return &Config{
