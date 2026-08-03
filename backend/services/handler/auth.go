@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"strings"
+
 	"github.com/gofiber/fiber/v2"
 	"github.com/neuroguard/gateway/auth"
 	"github.com/neuroguard/gateway/internal/domain"
@@ -40,6 +42,10 @@ func Login(svc *auth.Service) fiber.Handler {
 		var req loginRequest
 		if err := c.BodyParser(&req); err != nil {
 			return fiber.NewError(fiber.StatusBadRequest, "JSON inválido")
+		}
+		req.Email = strings.TrimSpace(strings.ToLower(req.Email))
+		if req.Email == "" || req.Password == "" {
+			return fiber.NewError(fiber.StatusBadRequest, "email e senha são obrigatórios")
 		}
 
 		u, ok := demoUsers[req.Email]
