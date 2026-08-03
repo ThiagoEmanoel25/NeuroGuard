@@ -21,6 +21,7 @@ func main() {
 	app := fiber.New(fiber.Config{
 		ReadTimeout:  cfg.Server.ReadTimeout,
 		WriteTimeout: cfg.Server.WriteTimeout,
+		ErrorHandler: handler.ErrorHandler,
 	})
 
 	// Authentication middleware
@@ -30,7 +31,7 @@ func main() {
 	)
 
 	app.Post("/auth/login", handler.Login(authSvc))
-	app.Post("/auth/logout", handler.Logout(authSvc))
+	app.Post("/auth/logout", authSvc.Protect(handler.Logout(authSvc)))
 
 	app.Post("/crisis/aura", authSvc.Protect(handler.TriggerAura))
 
