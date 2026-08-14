@@ -3,6 +3,8 @@ package config
 import "testing"
 
 func TestLoadUsesDefaultsAndRejectsInvalidNumbers(t *testing.T) {
+	t.Setenv("ENV", "development")
+	t.Setenv("DATABASE_URL", "")
 	t.Setenv("JWT_SECRET", "test-secret")
 	t.Setenv("JWT_EXPIRY_HOURS", "")
 	t.Setenv("REDIS_DB", "")
@@ -15,6 +17,9 @@ func TestLoadUsesDefaultsAndRejectsInvalidNumbers(t *testing.T) {
 	if cfg.Server.Port != "8080" || cfg.JWT.ExpiryHours != 24 || cfg.Redis.DB != 0 {
 		t.Fatalf("Load() = %#v; defaults were not applied", cfg)
 	}
+	if cfg.Database.URL == "" {
+		t.Fatal("Load() did not set the development database URL")
+	}
 
 	t.Setenv("JWT_EXPIRY_HOURS", "0")
 	if _, err := Load(); err == nil {
@@ -25,6 +30,15 @@ func TestLoadUsesDefaultsAndRejectsInvalidNumbers(t *testing.T) {
 	t.Setenv("REDIS_DB", "-1")
 	if _, err := Load(); err == nil {
 		t.Fatal("Load() accepted a negative Redis database index")
+	}
+}
+
+func TestLoadRequiresDatabaseURLInProduction(t *testing.T) {
+	t.Setenv("ENV", "production")
+	t.Setenv("DATABASE_URL", "")
+	t.Setenv("JWT_SECRET", "test-secret")
+	if _, err := Load(); err == nil {
+		t.Fatal("Load() succeeded without DATABASE_URL in production")
 	}
 }
 

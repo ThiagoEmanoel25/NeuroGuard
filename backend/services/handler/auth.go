@@ -1,11 +1,14 @@
 package handler
 
 import (
+	"errors"
 	"strings"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/neuroguard/gateway/auth"
 	"github.com/neuroguard/gateway/internal/domain"
+	"github.com/neuroguard/gateway/users"
+	"golang.org/x/crypto/bcrypt"
 )
 
 // Structs de request/response ficam minúsculas (não exportadas): elas são
@@ -20,24 +23,14 @@ type loginResponse struct {
 	Role  domain.Role `json:"role"`
 }
 
-// demoUsers é um substituto temporário do banco de dados.
-// ATENÇÃO: senha em texto puro, apenas para destravar o desenvolvimento local.
-// TODO(auth): trocar por consulta ao banco + bcrypt (golang.org/x/crypto/bcrypt)
-// antes de qualquer deploy. Nunca compare senha com ==.
-var demoUsers = map[string]struct {
-	ID       string
-	Password string
-	Role     domain.Role
-}{
-	"paciente@neuroguard.dev": {ID: "u-001", Password: "dev-only", Role: domain.RolePatient},
-	"resgate@neuroguard.dev":  {ID: "u-002", Password: "dev-only", Role: domain.RoleRescuer},
-	"medico@neuroguard.dev":   {ID: "u-003", Password: "dev-only", Role: domain.RoleDoctor},
-}
+// Executar bcrypt mesmo quando o usuario nao existe reduz a diferenca de tempo
+// entre uma senha errada e um email desconhecido, dificultando enumeracao.
+const dummyPasswordHash = "$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy"
 
-// Login recebe o Service por parâmetro e devolve o handler já "amarrado" a ele.
+// Login recebe o Service e o repositorio por parametro e devolve o handler pronto.
 // Esse padrão é injeção de dependência: o handler não cria o auth.Service nem
 // lê variáveis de ambiente — recebe pronto, o que o torna testável.
-func Login(svc *auth.Service) fiber.Handler {
+func Login(svc *auth.Service, repo users.Repository) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		var req loginRequest
 		if err := c.BodyParser(&req); err != nil {
@@ -48,8 +41,16 @@ func Login(svc *auth.Service) fiber.Handler {
 			return fiber.NewError(fiber.StatusBadRequest, "email e senha são obrigatórios")
 		}
 
-		u, ok := demoUsers[req.Email]
-		if !ok || u.Password != req.Password {
+		u, err := repo.FindByEmail(c.UserContext(), req.Email)
+		if errors.Is(err, users.ErrNotFound) {
+			_ = bcrypt.CompareHashAndPassword([]byte(dummyPasswordHash), []byte(req.Password))
+			return fiber.NewError(fiber.StatusUnauthorized, "credenciais inválidas")
+		}
+		if err != nil {
+			return fiber.NewError(fiber.StatusInternalServerError, "falha ao autenticar usuário")
+		}
+
+		if err := bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(req.Password)); err != nil {
 			// Mesma resposta para "email não existe" e "senha errada".
 			// Diferenciar as duas entrega ao atacante a lista de emails válidos
 			// (user enumeration) — relevante num app de saúde.
