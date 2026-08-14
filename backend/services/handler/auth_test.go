@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -10,15 +11,71 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/neuroguard/gateway/auth"
 	"github.com/neuroguard/gateway/internal/domain"
+	"github.com/neuroguard/gateway/users"
+	"golang.org/x/crypto/bcrypt"
 )
+
+type fakeUserRepository struct {
+	users map[string]*domain.User
+	err   error
+}
+
+func (r *fakeUserRepository) FindByEmail(_ context.Context, email string) (*domain.User, error) {
+	if r.err != nil {
+		return nil, r.err
+	}
+	user, ok := r.users[email]
+	if !ok {
+		return nil, users.ErrNotFound
+	}
+	return user, nil
+}
 
 func newTestApp() *fiber.App {
 	app := fiber.New(fiber.Config{ErrorHandler: ErrorHandler})
 	svc := auth.NewService("test-secret", time.Hour)
-	app.Post("/auth/login", Login(svc))
+	passwordHash, err := bcrypt.GenerateFromPassword([]byte("dev-only"), bcrypt.MinCost)
+	if err != nil {
+		panic(err)
+	}
+	repo := &fakeUserRepository{users: map[string]*domain.User{
+		"paciente@neuroguard.dev": {
+			ID:           "u-001",
+			Email:        "paciente@neuroguard.dev",
+			PasswordHash: string(passwordHash),
+			Role:         domain.RolePatient,
+		},
+	}}
+	app.Post("/auth/login", Login(svc, repo))
 	app.Post("/crisis/aura", svc.Protect(TriggerAura))
 	app.Post("/crisis/confirm", svc.Protect(auth.RequireRole(ConfirmRescue, domain.RoleRescuer, domain.RoleDoctor)))
 	return app
+}
+
+func TestLoginRejectsWrongPasswordAndUnknownUser(t *testing.T) {
+	app := newTestApp()
+	tests := []string{
+		`{"email":"paciente@neuroguard.dev","password":"senha-errada"}`,
+		`{"email":"desconhecido@neuroguard.dev","password":"dev-only"}`,
+	}
+
+	for _, body := range tests {
+		req := httptest.NewRequest(http.MethodPost, "/auth/login", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := app.Test(req)
+		if err != nil {
+			t.Fatalf("login request failed: %v", err)
+		}
+		if resp.StatusCode != http.StatusUnauthorized {
+			t.Errorf("status = %d; want %d", resp.StatusCode, http.StatusUnauthorized)
+		}
+	}
+}
+
+func TestDummyPasswordHashIsValid(t *testing.T) {
+	if _, err := bcrypt.Cost([]byte(dummyPasswordHash)); err != nil {
+		t.Fatalf("dummyPasswordHash is not a valid bcrypt hash: %v", err)
+	}
 }
 
 func TestLoginAndProtectedCrisisFlow(t *testing.T) {
