@@ -11,9 +11,14 @@ import (
 // Carregadas de variáveis de ambiente — nunca hardcode em produção.
 type Config struct {
 	Server   ServerConfig
+	Database DatabaseConfig
 	JWT      JWTConfig
 	Redis    RedisConfig
 	Services ServicesConfig
+}
+
+type DatabaseConfig struct {
+	URL string
 }
 
 type ServerConfig struct {
@@ -47,6 +52,15 @@ type ServicesConfig struct {
 // Load lê variáveis de ambiente e devolve Config preenchido.
 // Falha explicitamente se variáveis críticas estiverem ausentes.
 func Load() (*Config, error) {
+	env := getEnvOrDefault("ENV", "development")
+	databaseURL := os.Getenv("DATABASE_URL")
+	if databaseURL == "" {
+		if env == "production" {
+			return nil, fmt.Errorf("DATABASE_URL não definido em produção")
+		}
+		databaseURL = "postgres://postgres:postgres@localhost:5432/neuroguard?sslmode=disable"
+	}
+
 	jwtSecret := os.Getenv("JWT_SECRET")
 	if jwtSecret == "" {
 		return nil, fmt.Errorf("JWT_SECRET não definido — defina a variável de ambiente")
@@ -73,8 +87,9 @@ func Load() (*Config, error) {
 			Port:         getEnvOrDefault("PORT", "8080"),
 			ReadTimeout:  10 * time.Second,
 			WriteTimeout: 10 * time.Second,
-			Env:          getEnvOrDefault("ENV", "development"),
+			Env:          env,
 		},
+		Database: DatabaseConfig{URL: databaseURL},
 		JWT: JWTConfig{
 			Secret:        jwtSecret,
 			ExpiryHours:   jwtExpiry,
