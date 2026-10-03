@@ -1,0 +1,7 @@
+# Memória local do agente (não versionar)
+CLAUDE.local.md
+
+.env
+.env.*
+!.env.example
+.DS_Store

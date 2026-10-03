@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v2/middleware/limiter"
 	"github.com/neuroguard/gateway/auth"
 	"github.com/neuroguard/gateway/config"
 	"github.com/neuroguard/gateway/database"
@@ -46,7 +47,19 @@ func main() {
 		time.Duration(cfg.JWT.ExpiryHours)*time.Hour,
 	)
 
-	app.Post("/auth/login", handler.Login(authSvc, userRepo))
+	// Rate limit só no login: é o único endpoint sem token, logo o único
+	// alvo de força bruta. Chave é o IP (padrão do limiter).
+	// ponytail: em memória — vira Redis quando houver mais de uma réplica,
+	// porque hoje cada réplica conta separado.
+	loginLimiter := limiter.New(limiter.Config{
+		Max:        10,
+		Expiration: time.Minute,
+		LimitReached: func(c *fiber.Ctx) error {
+			return fiber.NewError(fiber.StatusTooManyRequests, "muitas tentativas de login — aguarde um minuto")
+		},
+	})
+
+	app.Post("/auth/login", loginLimiter, handler.Login(authSvc, userRepo))
 	app.Post("/auth/logout", authSvc.Protect(handler.Logout(authSvc)))
 
 	app.Post("/crisis/aura", authSvc.Protect(handler.TriggerAura))
