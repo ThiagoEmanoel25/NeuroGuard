@@ -10,6 +10,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/neuroguard/gateway/auth"
+	"github.com/neuroguard/gateway/crisis"
 	"github.com/neuroguard/gateway/internal/domain"
 	"github.com/neuroguard/gateway/users"
 	"golang.org/x/crypto/bcrypt"
@@ -32,6 +33,14 @@ func (r *fakeUserRepository) FindByEmail(_ context.Context, email string) (*doma
 }
 
 func newTestApp() *fiber.App {
+	repo, links := newCrisisRepo()
+	return newTestAppWith(crisis.NewService(repo, links))
+}
+
+// newTestAppWith monta o app de teste com as mesmas rotas e middlewares do
+// main.go, para o teste exercitar a composição real (Protect + RequireRole +
+// service) e não uma montagem paralela que pode divergir.
+func newTestAppWith(crisisSvc *crisis.Service) *fiber.App {
 	app := fiber.New(fiber.Config{ErrorHandler: ErrorHandler})
 	svc := auth.NewService("test-secret", time.Hour)
 	passwordHash, err := bcrypt.GenerateFromPassword([]byte("dev-only"), bcrypt.MinCost)
@@ -47,8 +56,12 @@ func newTestApp() *fiber.App {
 		},
 	}}
 	app.Post("/auth/login", Login(svc, repo))
-	app.Post("/crisis/aura", svc.Protect(TriggerAura))
-	app.Post("/crisis/confirm", svc.Protect(auth.RequireRole(ConfirmRescue, domain.RoleRescuer, domain.RoleDoctor)))
+	app.Post("/crises", svc.Protect(auth.RequireRole(TriggerAura(crisisSvc), domain.RolePatient)))
+	app.Post("/crises/:id/activate", svc.Protect(ActivateCrisis(crisisSvc)))
+	app.Post("/crises/:id/close", svc.Protect(CloseCrisis(crisisSvc)))
+	app.Post("/crises/:id/confirm", svc.Protect(
+		auth.RequireRole(ConfirmRescue(crisisSvc), domain.RoleRescuer, domain.RoleDoctor),
+	))
 	return app
 }
 
@@ -93,8 +106,8 @@ func TestLoginAndProtectedCrisisFlow(t *testing.T) {
 	// O token emitido pelo login é testado no serviço; aqui usamos um token
 	// determinístico para exercitar as regras da rota.
 	svc := auth.NewService("test-secret", time.Hour)
-	patientToken, _ := svc.GenerateToken("u-001", domain.RolePatient)
-	auraReq := httptest.NewRequest(http.MethodPost, "/crisis/aura", nil)
+	patientToken, _ := svc.GenerateToken(testPatientID, domain.RolePatient)
+	auraReq := httptest.NewRequest(http.MethodPost, "/crises", nil)
 	auraReq.Header.Set("Authorization", "Bearer "+patientToken)
 	auraResp, err := app.Test(auraReq)
 	if err != nil {
@@ -104,7 +117,7 @@ func TestLoginAndProtectedCrisisFlow(t *testing.T) {
 		t.Errorf("aura status = %d; want %d", auraResp.StatusCode, http.StatusAccepted)
 	}
 
-	confirmReq := httptest.NewRequest(http.MethodPost, "/crisis/confirm", nil)
+	confirmReq := httptest.NewRequest(http.MethodPost, "/crises/c-1/confirm", nil)
 	confirmReq.Header.Set("Authorization", "Bearer "+patientToken)
 	confirmResp, err := app.Test(confirmReq)
 	if err != nil {
